@@ -8,12 +8,18 @@ on:
   schedule:
     - cron: "17 17 * * *"
   workflow_dispatch:
+    inputs:
+      force_update:
+        description: Update dependencies even when the initial audit passes
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   pnpm-audit:
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-latest
 
     steps:
@@ -34,3 +40,134 @@ jobs:
 
       - name: Run pnpm audit
         run: pnpm audit
+
+  update-dependencies:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: pnpm-security-update
+      cancel-in-progress: false
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit before update
+        id: before
+        shell: bash
+        run: |
+          set +e
+          pnpm audit --json > "$RUNNER_TEMP/audit-before.json"
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/audit-before.json"
+          node - "$RUNNER_TEMP/audit-before.json" "$status" <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const counts = report.metadata?.vulnerabilities;
+          if (report.error || !counts) throw new Error('Audit did not return a vulnerability report');
+          const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
+          if (Number(process.argv[3]) !== 0 && total === 0) throw new Error('Audit failed without reporting vulnerabilities');
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `vulnerable=${total > 0}\n`);
+          NODE
+
+      - name: Update within declared version ranges
+        id: update
+        if: steps.before.outputs.vulnerable == 'true' || inputs.force_update == true
+        run: pnpm update
+
+      - name: Audit after update
+        id: after
+        if: steps.update.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm audit 2>&1 | tee "$RUNNER_TEMP/audit-after.txt"
+
+      - name: Lint updated dependencies
+        id: lint
+        if: steps.update.outcome == 'success'
+        continue-on-error: true
+        run: pnpm lint
+
+      - name: Build updated dependencies
+        id: build
+        if: steps.update.outcome == 'success'
+        continue-on-error: true
+        run: pnpm build
+
+      - name: Prepare verification report
+        if: steps.update.outcome == 'success'
+        env:
+          AUDIT_RESULT: ${{ steps.after.outcome }}
+          LINT_RESULT: ${{ steps.lint.outcome }}
+          BUILD_RESULT: ${{ steps.build.outcome }}
+        shell: bash
+        run: |
+          {
+            echo 'Automated dependency update using `pnpm update` within declared version ranges.'
+            echo
+            echo "- Audit: $AUDIT_RESULT"
+            echo "- Lint: $LINT_RESULT"
+            echo "- Build: $BUILD_RESULT"
+            echo
+            echo "[Workflow run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
+            echo
+            echo 'Checks above ran in the update workflow. PR workflows are not automatically triggered by GITHUB_TOKEN.'
+            echo
+            echo '<details><summary>Audit after update</summary>'
+            echo
+            echo '```text'
+            head -c 20000 "$RUNNER_TEMP/audit-after.txt"
+            echo
+            echo '```'
+            echo '</details>'
+          } > "$RUNNER_TEMP/dependency-update.md"
+          cat "$RUNNER_TEMP/dependency-update.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create or update dependency PR
+        id: pr
+        if: steps.update.outcome == 'success'
+        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
+        with:
+          branch: codex/pnpm-security-update
+          base: main
+          add-paths: |
+            package.json
+            pnpm-lock.yaml
+          commit-message: 'fix: update dependencies after pnpm audit'
+          title: 'fix: update dependencies after pnpm audit'
+          body-path: ${{ runner.temp }}/dependency-update.md
+          draft: ${{ steps.after.outcome != 'success' || steps.lint.outcome != 'success' || steps.build.outcome != 'success' }}
+
+      - name: Report PR result
+        if: steps.update.outcome == 'success'
+        env:
+          PR_URL: ${{ steps.pr.outputs.pull-request-url }}
+        run: |
+          if [ -n "$PR_URL" ]; then
+            echo "Dependency PR: $PR_URL" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'No dependency changes; no PR was created.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Fail when verification needs attention
+        if: steps.update.outcome == 'success' && (steps.after.outcome != 'success' || steps.lint.outcome != 'success' || steps.build.outcome != 'success')
+        run: exit 1
