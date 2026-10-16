@@ -2,18 +2,11 @@
 
 import { useMemo, useState } from "react"
 import { parseCsv } from "../lib/csv"
-import { RouletteItem } from "../types/roulette"
 import { applyWeightExpression } from "../lib/expression"
 import { buildRouletteSegments, pickWeighted } from "../lib/roulette"
 import RouletteWheel from "../components/RouletteWheel"
 
 type RouletteMode = "instant" | "animated"
-
-type PreviewItem = {
-  id: number
-  name: string
-  weight: string
-}
 
 const SAMPLE_CSV = `A, 10
 B, 20
@@ -25,7 +18,6 @@ export default function Page() {
   const [mode, setMode] = useState<RouletteMode>("instant")
   const [result, setResult] = useState<string>("")
   const [pickError, setPickError] = useState("")
-  const [error, setError] = useState<string>("")
   const [fileError, setFileError] = useState("")
   const [isSpinning, setIsSpinning] = useState(false)
   const [spinRotation, setSpinRotation] = useState(0)
@@ -185,7 +177,7 @@ export default function Page() {
                 1行につき「[名前], [重み]」の形式で入力します。
               </p>
               <p className="mt-2 text-xs text-slate-500">
-                [名前] にカンマ "," を含めたい場合は、ダブルクオーテーション "" で囲んでください。例: "Osaka, Japan", 5
+                [名前] にカンマ "," を含めたい場合は、ダブルクオーテーション &quot;&quot; で囲んでください。例: &quot;Osaka, Japan&quot;, 5
               </p>
             </div>
 
@@ -202,6 +194,9 @@ export default function Page() {
               <p className="mt-2 text-xs text-slate-500">
                 あるいは上記の形式の CSV ファイルを選択することで入力できます。
               </p>
+              {fileError && (
+                <p className="mt-2 text-xs text-red-600">{fileError}</p>
+              )}
             </div>
 
             <div className="mb-6">
@@ -261,11 +256,6 @@ export default function Page() {
               抽選
             </button>
 
-            {error && (
-              <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                {error}
-              </div>
-            )}
           </section>
 
           <div className="grid gap-6">
