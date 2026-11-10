@@ -45,35 +45,35 @@ export default function Page() {
     }
   }
 
-  const preview = useMemo(() => {
-    if (!parsed.ok) return { ok: false as const, error: parsed.error }
+  const preview = (() => {
+  if (!parsed.ok) return { ok: false as const, error: parsed.error }
 
-    const rows = []
+  const rows = []
 
-    for (const item of parsed.items) {
-      const result = applyWeightExpression(expression, item.weight)
+  for (const item of parsed.items) {
+    const result = applyWeightExpression(expression, item.weight)
 
-      if (!result.ok) {
-        return { ok: false as const, error: result.error }
-      }
-
-      if (result.value <= 0) continue
-
-      rows.push({
-        ...item,
-        adjustedWeight: result.value,
-      })
+    if (!result.ok) {
+      return { ok: false as const, error: result.error }
     }
 
-    if (rows.length === 0) {
-      return {
-        ok: false as const,
-        error: "重みが 0 より大きい要素がありません",
-      }
-    }
+    if (result.value <= 0) continue
 
-    return { ok: true as const, rows }
-  }, [parsed, expression])
+    rows.push({
+      ...item,
+      adjustedWeight: result.value,
+    })
+  }
+
+  if (rows.length === 0) {
+    return {
+      ok: false as const,
+      error: "重みが 0 より大きい要素がありません",
+    }
+  }
+
+  return { ok: true as const, rows }
+})()
 
   const startSpin = (
     entries: { item: { id: number; name: string }; weight: number }[],
@@ -177,7 +177,7 @@ export default function Page() {
                 1行につき「[名前], [重み]」の形式で入力します。
               </p>
               <p className="mt-2 text-xs text-slate-500">
-                [名前] にカンマ "," を含めたい場合は、ダブルクオーテーション &quot;&quot; で囲んでください。例: &quot;Osaka, Japan&quot;, 5
+                [名前] にカンマ &quot;,&quot; を含めたい場合は、ダブルクオーテーション &quot;&quot; で囲んでください。例: &quot;Osaka, Japan&quot;, 5
               </p>
             </div>
 

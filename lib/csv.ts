@@ -1,4 +1,3 @@
-import { parse } from "path"
 import { CsvParseResult, RouletteItem } from "../types/roulette"
 
 function parseCsvLine(line: string): string[] {
