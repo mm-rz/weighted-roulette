@@ -24,13 +24,13 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.1.0
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@v6.1.1
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v6.5.0
         with:
           node-version: 22
           cache: pnpm
@@ -58,15 +58,15 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Checkout main
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.1.0
         with:
           ref: main
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@v6.1.1
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v6.5.0
         with:
           node-version: 22
           cache: pnpm
@@ -145,7 +145,7 @@ jobs:
       - name: Create or update dependency PR
         id: pr
         if: steps.update.outcome == 'success'
-        uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8
+        uses: peter-evans/create-pull-request@v8.1.1
         with:
           branch: codex/pnpm-security-update
           base: main
