@@ -39,7 +39,13 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Run pnpm audit
-        run: pnpm audit
+        shell: bash
+        run: |
+          set +e
+          pnpm audit --json > "$RUNNER_TEMP/pnpm-audit.json"
+          status=$?
+          set -e
+          node .github/scripts/report-pnpm-audit.mjs "$RUNNER_TEMP/pnpm-audit.json" "$status" --fail-on-vulnerabilities
 
   update-dependencies:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -76,16 +82,7 @@ jobs:
           pnpm audit --json > "$RUNNER_TEMP/audit-before.json"
           status=$?
           set -e
-          cat "$RUNNER_TEMP/audit-before.json"
-          node - "$RUNNER_TEMP/audit-before.json" "$status" <<'NODE'
-          const fs = require('node:fs');
-          const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
-          const counts = report.metadata?.vulnerabilities;
-          if (report.error || !counts) throw new Error('Audit did not return a vulnerability report');
-          const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
-          if (Number(process.argv[3]) !== 0 && total === 0) throw new Error('Audit failed without reporting vulnerabilities');
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `vulnerable=${total > 0}\n`);
-          NODE
+          node .github/scripts/report-pnpm-audit.mjs "$RUNNER_TEMP/audit-before.json" "$status"
 
       - name: Update within declared version ranges
         id: update
@@ -98,8 +95,11 @@ jobs:
         continue-on-error: true
         shell: bash
         run: |
-          set -o pipefail
-          pnpm audit 2>&1 | tee "$RUNNER_TEMP/audit-after.txt"
+          set +e
+          pnpm audit --json > "$RUNNER_TEMP/audit-after.json"
+          status=$?
+          set -e
+          node .github/scripts/report-pnpm-audit.mjs "$RUNNER_TEMP/audit-after.json" "$status" --fail-on-vulnerabilities
 
       - name: Lint updated dependencies
         id: lint
@@ -135,7 +135,7 @@ jobs:
             echo '<details><summary>Audit after update</summary>'
             echo
             echo '```text'
-            head -c 20000 "$RUNNER_TEMP/audit-after.txt"
+            head -c 20000 "$RUNNER_TEMP/audit-after.json"
             echo
             echo '```'
             echo '</details>'
